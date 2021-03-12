@@ -1,0 +1,140 @@
+---
+title: "Practical ML Project - Exercise Prediction"
+author: "Avijit"
+date: "03^rd^ March 2021"
+output:
+    html_document:
+        keep_md: yes
+---
+
+# Synopsis
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. This project uses data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of your project is to predict the manner in which they did the exercise using the collected data. This feature is reflected in the "classe" variable in the training set.
+
+## Importing libraries
+```{r load-packages, warning=FALSE, message=FALSE, cache=TRUE}
+setwd("D:/R working directory/Practical ML Project")
+library(RCurl)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+# Dataset
+## Loading data
+```{r loading data, cache=TRUE}
+trainFile0 <- "./pml-training.csv"
+testFile0  <- "./pml-testing.csv"
+if (!file.exists(trainFile0)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                destfile=trainFile0, method="curl")}
+pml.data <- read.csv(trainFile0)
+
+if (!file.exists(testFile0)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                destfile=testFile0, method="curl")}
+pml.validation <- read.csv(testFile0)
+```
+
+## Viewing data
+```{r viewing data, cache=TRUE}
+dim(pml.data)
+dim(pml.validation)
+
+w <- which(names(pml.data)!=names(pml.validation));w #160
+names(pml.data)[w]
+names(pml.validation)[w]
+table(pml.data[,w])
+pml.validation[,w]
+```
+
+## Cleaning data
+Columns containing more than 90% missing values and those with user info and timestamp are removed.
+```{r cleaning data 1, cache=TRUE}
+w <- which(colSums(is.na(pml.data)|pml.data=="")>0.9*dim(pml.data)[1])
+as.vector(w)
+pml.data.c <- pml.data[,-w]
+pml.data.c <- pml.data.c[,-c(1:7)] #user info and timestamp
+pml.data.c$classe <- as.factor(pml.data.c$classe)
+dim(pml.data); dim(pml.data.c)
+```
+Same process is performed on validation dataset.
+```{r cleaning data 2, cache=TRUE}
+w <- which(colSums(is.na(pml.validation)|pml.validation=="")>
+               0.9*dim(pml.validation)[1])
+pml.validation.c <- pml.validation[,-w]
+pml.validation.c <- pml.validation.c[,-c(1:7)] #user info and timestamp
+dim(pml.validation); dim(pml.validation.c)
+```
+After cleaning the data, number of columns are narrowed down from 160 to 53 relevant ones
+
+## Splitting data
+Data is split into training and testing datasets with a ratio of 70:30
+```{r splitting data, cache=TRUE}
+set.seed(666)
+inTrain <- createDataPartition(y=pml.data.c$classe, p=0.7, list=F)
+training <- pml.data.c[inTrain,]
+testing <- pml.data.c[-inTrain,]
+dim(training)
+dim(testing)
+```
+
+# Prediction Models
+## 1. Random forest
+```{r random forest, cache=TRUE}
+controlRf <- trainControl(method="cv", 5)
+mod.rf <- train(classe ~ ., data=training, method="rf",
+                 trControl=controlRf, ntree=250)
+mod.rf$finalModel
+plot(mod.rf)
+```
+
+### Random Forest Testing
+```{r rf testing, cache=TRUE}
+pred.rf <- predict(mod.rf, testing)
+cm.rf <- confusionMatrix(testing$classe, pred.rf)
+cm.rf$table
+cm.rf$overall[1] # Accuracy of model = 99.35%
+1 - as.numeric(cm.rf$overall[1]) # out-of-sample error is 0.65%
+```
+Accuracy of Random Forest Model = 99.35%
+
+## 2. Regression Trees
+```{r rpart, cache=TRUE}
+mod.rpart <- rpart(classe ~ ., data=training, method="class")
+prp(mod.rpart)
+```
+
+### Regression Trees Testing
+
+```{r rpart testing, cache=TRUE}
+pred.rpart <- predict(mod.rpart, testing, type="class")
+cm.rpart <- confusionMatrix(testing$classe, pred.rpart)
+cm.rpart$table
+cm.rpart$overall[1] # Accuracy of model = 74.5%
+1 - as.numeric(cm.rpart$overall[1]) # out-of-sample error is 25.5%
+```
+Accuracy of Regression Trees Model = 74.5%
+
+## 3. Gradient Boosting
+```{r gbm, cache=TRUE}
+mod.gbm <- train(classe ~ ., data=training, verbose=F, method="gbm")
+mod.gbm$finalModel
+```
+### Gradient Boosting Testing
+```{r gbm testing, cache=TRUE}
+pred.gbm <- predict(mod.gbm, testing)
+cm.gbm <- confusionMatrix(testing$classe, pred.gbm)
+cm.gbm$table
+cm.gbm$overall[1] # Accuracy of model = 96%
+1 - as.numeric(cm.gbm$overall[1]) # out-of-sample error is 4%
+```
+Accuracy of Gradient Boosting Model = 96%
+
+# Results
+Out of the tested three machine learning prediction models, the random forest model stands out with the highest accuracy of prediction of 99.35%. So, we deploy random forest model to the validation dataset and obtain the following results.
+```{r, cache=TRUE}
+predict(mod.rf, pml.validation.c)
+```
+After submitting to prediction assignment part of the project, we find that all 20/20 predicted values were correct.
